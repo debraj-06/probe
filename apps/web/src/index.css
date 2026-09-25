@@ -1,23 +1,47 @@
 @import "tailwindcss";
 
+/* =========================================================================
+   PROBE design tokens
+   ========================================================================= */
 @theme {
+  /* surfaces — deep, slightly blue-shifted "ink" so stacked panels read as
+     depth rather than as five different greys */
   --color-ink-950: #04070d;
+  --color-ink-925: #060b13;
   --color-ink-900: #080e17;
+  --color-ink-875: #0a1220;
   --color-ink-850: #0c141f;
   --color-ink-800: #111b28;
+  --color-ink-750: #15202e;
   --color-ink-700: #1a2634;
   --color-ink-600: #26364a;
   --color-ink-500: #3a4d63;
 
+  /* brand */
+  --color-probe-200: #a5f3fc;
   --color-probe-300: #67e8f9;
   --color-probe-400: #22d3ee;
   --color-probe-500: #06b6d4;
   --color-probe-600: #0891b2;
+  --color-probe-700: #0e7490;
 
-  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* Real faces — provided by @fontsource-variable, imported in main.tsx. */
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* elevation */
+  --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px -16px rgba(0, 0, 0, 0.8);
+  --shadow-raised: 0 2px 6px rgba(0, 0, 0, 0.5), 0 24px 60px -24px rgba(0, 0, 0, 0.9);
+
+  --animate-rise: probe-rise 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-pulse-dot: probe-pulse 1.6s ease-in-out infinite;
+  --animate-shimmer: probe-shimmer 1.8s linear infinite;
+  --animate-sweep: probe-sweep 2.4s linear infinite;
 }
 
+/* =========================================================================
+   base
+   ========================================================================= */
 @layer base {
   html,
   body,
@@ -26,23 +50,39 @@
   }
 
   body {
-    @apply bg-ink-950 text-slate-300 font-sans antialiased;
+    @apply bg-ink-950 font-sans text-slate-300 antialiased;
+    /* Two soft light sources top-left / top-right. Fixed attachment so the
+       gradient does not scroll with page content. */
     background-image:
-      radial-gradient(900px 500px at 12% -10%, rgba(34, 211, 238, 0.09), transparent 60%),
-      radial-gradient(800px 500px at 100% 0%, rgba(167, 139, 250, 0.07), transparent 55%);
+      radial-gradient(1000px 560px at 10% -12%, rgba(34, 211, 238, 0.1), transparent 60%),
+      radial-gradient(900px 520px at 102% -4%, rgba(167, 139, 250, 0.08), transparent 55%),
+      radial-gradient(700px 420px at 50% 120%, rgba(6, 182, 212, 0.05), transparent 60%);
     background-attachment: fixed;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Numeric columns (durations, counts, confidence) should not jitter. */
+  .font-mono,
+  [class*="tabular"] {
+    font-variant-numeric: tabular-nums;
+  }
+
+  ::selection {
+    background: rgba(34, 211, 238, 0.28);
+    color: #e2e8f0;
   }
 
   ::-webkit-scrollbar {
-    width: 9px;
-    height: 9px;
+    width: 10px;
+    height: 10px;
   }
   ::-webkit-scrollbar-track {
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    @apply bg-ink-700 rounded-full;
-    border: 2px solid transparent;
+    @apply rounded-full bg-ink-700;
+    border: 3px solid transparent;
     background-clip: content-box;
   }
   ::-webkit-scrollbar-thumb:hover {
@@ -50,29 +90,102 @@
   }
 
   :focus-visible {
-    @apply outline-none ring-2 ring-probe-400/60 ring-offset-2 ring-offset-ink-950;
+    @apply outline-none ring-2 ring-probe-400/70 ring-offset-2 ring-offset-ink-950;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 }
 
+/* =========================================================================
+   utilities
+   ========================================================================= */
 @layer utilities {
+  /* Standard raised surface. */
   .panel {
-    @apply bg-ink-900/80 border border-ink-700/80 rounded-xl backdrop-blur-sm;
+    @apply rounded-xl border border-ink-700/70 bg-ink-900/80 backdrop-blur-sm;
+    box-shadow: var(--shadow-panel);
+  }
+
+  /* A surface that wants to sit above its neighbours (modals, popovers). */
+  .panel-raised {
+    @apply rounded-xl border border-ink-600/80 bg-ink-875/95 backdrop-blur-md;
+    box-shadow: var(--shadow-raised);
+  }
+
+  /* Hairline that catches light at the top edge — cheap way to make a flat
+     dark card feel like a physical surface. */
+  .hairline-top {
+    position: relative;
+  }
+  .hairline-top::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 1px;
+    border-radius: inherit;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(148, 163, 184, 0.16) 22%,
+      rgba(148, 163, 184, 0.16) 78%,
+      transparent
+    );
+    pointer-events: none;
   }
 
   .glow-text {
     text-shadow: 0 0 18px rgba(34, 211, 238, 0.45);
   }
 
+  .glow-ring {
+    box-shadow:
+      0 0 0 1px rgba(34, 211, 238, 0.22),
+      0 0 24px -6px rgba(34, 211, 238, 0.55);
+  }
+
   .scroll-thin {
     scrollbar-width: thin;
   }
 
-  .animate-pulse-dot {
-    animation: probe-pulse 1.6s ease-in-out infinite;
+  /* Loading placeholder with a travelling highlight. */
+  .skeleton {
+    @apply relative overflow-hidden rounded-md bg-ink-800/80;
+  }
+  .skeleton::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(148, 163, 184, 0.09),
+      transparent
+    );
+    animation: var(--animate-shimmer);
   }
 
-  .animate-rise {
-    animation: probe-rise 0.28s ease-out both;
+  /* Radar sweep used by the idle "waiting for a capture" state. */
+  .radar-sweep::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: conic-gradient(
+      from 0deg,
+      transparent 0deg,
+      rgba(34, 211, 238, 0.16) 40deg,
+      transparent 70deg
+    );
+    animation: var(--animate-sweep);
   }
 }
 
@@ -83,8 +196,8 @@
     transform: scale(1);
   }
   50% {
-    opacity: 0.45;
-    transform: scale(0.82);
+    opacity: 0.4;
+    transform: scale(0.78);
   }
 }
 
@@ -96,5 +209,17 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes probe-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes probe-sweep {
+  100% {
+    transform: rotate(360deg);
   }
 }

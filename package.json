@@ -10,8 +10,11 @@
     "dev:demo": "pnpm --filter @probe/demoshop dev",
     "dev:all": "bash scripts/dev.sh",
     "build": "pnpm --filter @probe/web build && pnpm --filter @probe/demoshop build",
-    "test": "pnpm --filter @probe/api test",
-    "install:all": "pnpm install && pnpm --filter @probe/api install:py"
+    "test": "pnpm --filter @probe/api test && pnpm --filter @probe/web test",
+    "install:all": "pnpm install && pnpm --filter @probe/api install:py",
+    "test:web": "pnpm --filter @probe/web test",
+    "test:api": "pnpm --filter @probe/api test",
+    "typecheck": "pnpm --filter @probe/web typecheck"
   },
   "engines": {
     "node": ">=20"
