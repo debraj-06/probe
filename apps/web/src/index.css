@@ -1,0 +1,100 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink-950: #04070d;
+  --color-ink-900: #080e17;
+  --color-ink-850: #0c141f;
+  --color-ink-800: #111b28;
+  --color-ink-700: #1a2634;
+  --color-ink-600: #26364a;
+  --color-ink-500: #3a4d63;
+
+  --color-probe-300: #67e8f9;
+  --color-probe-400: #22d3ee;
+  --color-probe-500: #06b6d4;
+  --color-probe-600: #0891b2;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-ink-950 text-slate-300 font-sans antialiased;
+    background-image:
+      radial-gradient(900px 500px at 12% -10%, rgba(34, 211, 238, 0.09), transparent 60%),
+      radial-gradient(800px 500px at 100% 0%, rgba(167, 139, 250, 0.07), transparent 55%);
+    background-attachment: fixed;
+  }
+
+  ::-webkit-scrollbar {
+    width: 9px;
+    height: 9px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-ink-700 rounded-full;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-ink-600;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-probe-400/60 ring-offset-2 ring-offset-ink-950;
+  }
+}
+
+@layer utilities {
+  .panel {
+    @apply bg-ink-900/80 border border-ink-700/80 rounded-xl backdrop-blur-sm;
+  }
+
+  .glow-text {
+    text-shadow: 0 0 18px rgba(34, 211, 238, 0.45);
+  }
+
+  .scroll-thin {
+    scrollbar-width: thin;
+  }
+
+  .animate-pulse-dot {
+    animation: probe-pulse 1.6s ease-in-out infinite;
+  }
+
+  .animate-rise {
+    animation: probe-rise 0.28s ease-out both;
+  }
+}
+
+@keyframes probe-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.82);
+  }
+}
+
+@keyframes probe-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

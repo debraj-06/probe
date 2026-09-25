@@ -1,0 +1,32 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# build output
+dist/
+build/
+*.tsbuildinfo
+
+# runtime data (sqlite db, screenshots, evidence, videos)
+data/
+!data/.gitkeep
+
+# env / secrets
+.env
+.env.local
+!.env.example
+
+# os / editor
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json

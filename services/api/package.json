@@ -1,0 +1,14 @@
+{
+  "name": "@probe/api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PROBE backend — FastAPI orchestrator, agents and browser controller",
+  "scripts": {
+    "dev": "uv run uvicorn app.main:app --port 8000 --reload",
+    "start": "uv run uvicorn app.main:app --port 8000",
+    "install:py": "uv sync",
+    "test": "uv run pytest",
+    "lint": "uv run ruff check app",
+    "browser:install": "uv run playwright install chromium"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "name": "probe",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PROBE \u2014 Autonomous AI-Powered Web Application Testing & Investigation Platform",
+  "scripts": {
+    "dev": "pnpm --filter @probe/web dev",
+    "dev:web": "pnpm --filter @probe/web dev",
+    "dev:api": "pnpm --filter @probe/api dev",
+    "dev:demo": "pnpm --filter @probe/demoshop dev",
+    "dev:all": "bash scripts/dev.sh",
+    "build": "pnpm --filter @probe/web build && pnpm --filter @probe/demoshop build",
+    "test": "pnpm --filter @probe/api test",
+    "install:all": "pnpm install && pnpm --filter @probe/api install:py"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "@tailwindcss/oxide"
+    ]
+  }
+}
