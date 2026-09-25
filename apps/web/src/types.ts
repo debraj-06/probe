@@ -117,6 +117,8 @@ export interface Report {
   url: string;
   inspection: string;
   duration: string;
+  /** Numeric twin of `duration` — present on ReportOut, mirrored here. */
+  duration_s: number | null;
   agents: Array<{ role: string; label: string; goal: string; discoveries: number }>;
   agent_count: number;
   findings: number;

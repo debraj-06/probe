@@ -17,6 +17,7 @@ export default function FindingsFeed({
     <>
       <PanelHeader
         title="Findings"
+        icon="🐞"
         subtitle={
           findings.length
             ? `${findings.length} validated by Review AI`

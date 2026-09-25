@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 
 import { api } from "../../lib/api";
+import { exportReportJson, exportReportMarkdown } from "../../lib/export";
 import { agentMeta, classificationStyle, severityStyle } from "../../lib/format";
 import type { ReportResponse } from "../../types";
-import { EmptyState, PanelHeader, Spinner } from "../ui";
+import { Button, EmptyState, PanelHeader, SeverityBar, Spinner } from "../ui";
 
 export default function FinalReport({ inspectionId }: { inspectionId: string }) {
   const [report, setReport] = useState<ReportResponse | null>(null);
@@ -14,8 +15,9 @@ export default function FinalReport({ inspectionId }: { inspectionId: string }) 
     api
       .report(inspectionId)
       .then((result) => alive && setReport(result))
-      .catch((err: unknown) =>
-        alive && setError(err instanceof Error ? err.message : String(err)),
+      .catch(
+        (err: unknown) =>
+          alive && setError(err instanceof Error ? err.message : String(err)),
       );
     return () => {
       alive = false;
@@ -25,7 +27,7 @@ export default function FinalReport({ inspectionId }: { inspectionId: string }) 
   if (error) {
     return (
       <>
-        <PanelHeader title="Final report" />
+        <PanelHeader title="Final report" icon="🧠" />
         <EmptyState icon="⚠" title="Report unavailable" hint={error} />
       </>
     );
@@ -34,7 +36,7 @@ export default function FinalReport({ inspectionId }: { inspectionId: string }) 
   if (!report) {
     return (
       <>
-        <PanelHeader title="Final report" />
+        <PanelHeader title="Final report" icon="🧠" />
         <div className="flex items-center justify-center py-10">
           <Spinner label="Review AI is assembling the report…" />
         </div>
@@ -54,13 +56,35 @@ export default function FinalReport({ inspectionId }: { inspectionId: string }) 
     <>
       <PanelHeader
         title="Final report"
+        icon="🧠"
         subtitle={`${report.application} · ${report.inspection} inspection · ${report.duration} · ${report.agent_count} agents · ${report.browser}`}
         right={
-          report.correlated > 0 ? (
-            <span className="rounded bg-probe-500/15 px-2 py-0.5 text-[11px] text-probe-300">
-              {report.correlated} correlated
-            </span>
-          ) : null
+          <div className="flex items-center gap-2">
+            {report.correlated > 0 ? (
+              <span
+                className="hidden rounded bg-probe-500/15 px-2 py-0.5 text-[11px] text-probe-300 sm:inline"
+                title="Correlated across multiple agent perspectives by the Review AI"
+              >
+                {report.correlated} correlated
+              </span>
+            ) : null}
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => exportReportMarkdown(report)}
+              title="Download as Markdown — ready to paste into an issue"
+            >
+              ↓ Markdown
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => exportReportJson(report)}
+              title="Download the raw report JSON"
+            >
+              ↓ JSON
+            </Button>
+          </div>
         }
       />
 
@@ -72,17 +96,31 @@ export default function FinalReport({ inspectionId }: { inspectionId: string }) 
             </p>
           ) : null}
 
-          <div className="grid grid-cols-5 gap-2">
-            {counts.map(([label, value, dot]) => (
-              <div
-                key={label}
-                className="rounded-lg border border-ink-700 bg-ink-850/50 px-3 py-2 text-center"
-              >
-                <span className={`mx-auto block h-1.5 w-6 rounded-full ${dot}`} />
-                <p className="mt-1.5 font-mono text-xl font-semibold text-slate-200">{value}</p>
-                <p className="text-[10px] tracking-wider text-slate-600 uppercase">{label}</p>
-              </div>
-            ))}
+          <div>
+            <div className="grid grid-cols-5 gap-2">
+              {counts.map(([label, value, dot]) => (
+                <div
+                  key={label}
+                  className="rounded-lg border border-ink-700 bg-ink-850/50 px-3 py-2 text-center transition-colors hover:border-ink-600"
+                >
+                  <span className={`mx-auto block h-1.5 w-6 rounded-full ${dot}`} />
+                  <p className="mt-1.5 font-mono text-xl font-semibold tabular-nums text-slate-200">
+                    {value}
+                  </p>
+                  <p className="text-[10px] tracking-wider text-slate-600 uppercase">{label}</p>
+                </div>
+              ))}
+            </div>
+            <SeverityBar
+              counts={{
+                critical: report.critical,
+                high: report.high,
+                medium: report.medium,
+                low: report.low,
+                info: report.info,
+              }}
+              className="mt-2"
+            />
           </div>
 
           <div>
@@ -108,7 +146,7 @@ export default function FinalReport({ inspectionId }: { inspectionId: string }) 
             <h3 className="text-[11px] font-semibold tracking-wider text-slate-500 uppercase">
               All findings
             </h3>
-            <ul className="mt-2 divide-y divide-ink-700/60">
+            <ul className="mt-2 divide-y divide-ink-700/50">
               {report.items.map((finding) => {
                 const style = severityStyle(finding.severity);
                 const classification = classificationStyle(finding.classification);
@@ -154,7 +192,7 @@ export default function FinalReport({ inspectionId }: { inspectionId: string }) 
             {report.agents.map((agent) => (
               <li
                 key={agent.role}
-                className="rounded-lg border border-ink-700 bg-ink-850/50 px-3 py-2"
+                className="rounded-lg border border-ink-700 bg-ink-850/50 px-3 py-2 transition-colors hover:border-ink-600"
               >
                 <div className="flex items-center gap-2">
                   <span aria-hidden>{agentMeta(agent.role).icon}</span>

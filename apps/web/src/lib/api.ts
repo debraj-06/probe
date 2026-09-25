@@ -1,11 +1,13 @@
 /** Tiny fetch wrapper around the PROBE API. */
 
 import type {
+  Evidence,
   FindingDetail,
   Health,
   Inspection,
   InspectionCreate,
   InspectionDetail,
+  ProbeEvent,
   ReportResponse,
 } from "../types";
 
@@ -45,6 +47,17 @@ export const api = {
     request<{ id: string; stopping: boolean }>(`/api/inspections/${id}/stop`, {
       method: "POST",
     }),
+
+  /** Re-run an inspection with exactly the settings it was created with. */
+  restartInspection: (id: string) =>
+    request<{ id: string; restarted: boolean }>(`/api/inspections/${id}/restart`, {
+      method: "POST",
+    }),
+
+  events: (id: string) => request<ProbeEvent[]>(`/api/inspections/${id}/events`),
+
+  /** Every screenshot / console / network artifact captured for an inspection. */
+  evidence: (id: string) => request<Evidence[]>(`/api/inspections/${id}/evidence`),
 
   finding: (id: string) => request<FindingDetail>(`/api/findings/${id}`),
 

@@ -57,9 +57,17 @@ pnpm run dev:demo
 ### Test
 
 ```bash
-pnpm test                      # 26 backend tests
+pnpm test                      # 26 backend + 34 frontend tests
+pnpm test:api                  # backend only   (pytest)
+pnpm test:web                  # frontend only  (vitest + Testing Library)
+pnpm typecheck                 # tsc across the dashboard
 cd services/api && uv run ruff check app
 ```
+
+The frontend suite renders the real components against a mocked API client. It
+includes regression tests for three defects that shipped in the dashboard: a
+hard-coded agent count, a pre-filled inspection URL that could not resolve, and
+a backend `restart` endpoint nothing in the UI ever called.
 
 ---
 
@@ -125,6 +133,36 @@ set of recommendations. `GET /api/findings/{id}` returns it all as
 
 Findings are merged when they share a URL **and** the same control target, or
 when their tags overlap.
+
+---
+
+## The dashboard
+
+Three screens, one live stream.
+
+- **Dashboard** — every inspection, its severity distribution at a glance, and an
+  engine strip that reports what the backend is really running on: browser
+  engine (Chromium vs simulator) and decision engine (model vs heuristic
+  policies). Both change what a result means, so neither is left implicit.
+- **New inspection** — URL, depth, focus and optional goals. A bare host name is
+  accepted and gets `https://` added; an unusable URL is rejected in place with
+  a reason rather than failing after submit.
+- **Inspection workspace** — agents on the left, the live browser capture in the
+  middle framed as a browser window, the event stream on the right. Findings
+  open a side panel with expected/actual, reproduction steps, the correlation
+  reasoning, and the screenshot / console / network evidence.
+
+Two things worth knowing:
+
+- **Re-run.** A finished inspection can be re-run in place with its original
+  settings (`↻ Re-run`) — this is the `POST /api/inspections/{id}/restart`
+  endpoint, which the UI did not previously expose.
+- **Export.** The final report downloads as **Markdown** (ready to paste into an
+  issue) or **JSON**. Both are generated client-side from the report payload, so
+  no extra endpoint is involved.
+
+Typography is Inter and JetBrains Mono, self-hosted via `@fontsource-variable`
+rather than a font CDN, so the dashboard renders identically offline.
 
 ---
 
@@ -238,9 +276,11 @@ probe/
 │   └── src/
 │       ├── components/          Dashboard, NewInspection, InspectionWorkspace
 │       │   └── workspace/       agents, live preview, activity, findings, report
-│       ├── hooks/               useInspectionStream (WebSocket + REST fallback)
-│       ├── lib/                 api client + formatters
-│       └── types.ts             shared API types
+│       ├── hooks/               useInspectionStream (WS + REST fallback),
+│       │                        useEngine (live backend/browser/LLM status)
+│       ├── lib/                 api client, formatters, report export (md/json)
+│       ├── test/                vitest setup
+│       └── types.ts             shared API types (mirrors the Pydantic schemas)
 ├── demoshop/            the target app — 6 planted defects (port 5174)
 ├── services/api/        FastAPI backend
 │   ├── app/
