@@ -12,7 +12,7 @@ import type {
 
 export interface AgentState {
   role: string;
-  status: "idle" | "active" | "done";
+  status: "idle" | "active" | "done" | "failed";
   lastMessage: string;
   steps: number;
   discoveries: number;
@@ -113,9 +113,16 @@ function applyEvent(state: StreamState, event: ProbeEvent): StreamState {
       break;
     }
 
+    case "agent.error": {
+      const agent = ensureAgent(agents, role);
+      agents[role] = { ...agent, status: "failed", lastMessage: event.message };
+      break;
+    }
+
     case "agent.finished": {
       const agent = ensureAgent(agents, role);
-      agents[role] = { ...agent, status: "done", lastMessage: event.message };
+      const status = data.status === "failed" ? "failed" : "done";
+      agents[role] = { ...agent, status, lastMessage: event.message };
       break;
     }
 
@@ -186,9 +193,11 @@ function mergeDetail(state: StreamState, detail: InspectionDetail): StreamState 
       status:
         run.status === "completed"
           ? "done"
-          : run.status === "running"
-            ? "active"
-            : (existing?.status ?? "idle"),
+          : run.status === "failed"
+            ? "failed"
+            : run.status === "running"
+              ? "active"
+              : (existing?.status ?? "idle"),
       lastMessage: existing?.lastMessage || run.summary || "",
       steps: run.steps,
       discoveries: run.discoveries,

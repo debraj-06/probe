@@ -27,19 +27,32 @@ evidence attached — before you ever had to click anything yourself.
 ```bash
 # 1. dependencies (one time)
 pnpm install
-pnpm --filter @probe/api install:py        # uv sync
-uv run --project services/api playwright install chromium   # optional, real browser
+pnpm --filter @probe/api install:py
+uv run --project services/api playwright install chromium
 
-# 2. everything at once
+# 2. configure the model used by every explorer and Review AI
+cp .env.example .env
+# Edit .env: set PROBE_LLM_PROVIDER / PROBE_LLM_MODEL and credentials or a local
+# OpenAI-compatible model endpoint (for example, Ollama or vLLM).
+
+# 3. start the dashboard, API, and optional DemoShop target
 ./scripts/dev.sh
 ```
 
-Then open **http://127.0.0.1:5173**, paste `http://demoshop.local:5174/` (or
-`http://127.0.0.1:5174/`), pick a depth and hit **Start inspection**.
+Then open **http://127.0.0.1:5173**, paste the URL of a site you own or are
+authorized to test, choose a depth, and start. The DemoShop is an optional local
+test target; it is never selected automatically.
 
-No Chromium? PROBE runs `browser_mode=auto`, which tries Playwright and quietly
-falls back to a built-in simulator of the demo shop, so the whole platform is
-demonstrable offline.
+Real Chromium is the default. If it cannot launch, PROBE reports a failed run
+instead of substituting simulated pages. The built-in simulator is only used
+when `PROBE_BROWSER_MODE=mock` is explicitly selected, and its report is labelled
+as simulated. When `PROBE_LLM_PROVIDER=none`, the agents use deterministic
+policies rather than a model; the dashboard and report identify that mode.
+
+By default a read-only safety guard blocks POST/PUT/PATCH/DELETE requests and
+common payment/delete controls. The inspection form requires authorization and
+makes write-enabled testing an explicit opt-in; use that only on a disposable
+staging site.
 
 ### Run the pieces by hand
 
@@ -57,7 +70,7 @@ pnpm run dev:demo
 ### Test
 
 ```bash
-pnpm test                      # 26 backend + 34 frontend tests
+pnpm test                      # 31 backend + 36 frontend tests
 pnpm test:api                  # backend only   (pytest)
 pnpm test:web                  # frontend only  (vitest + Testing Library)
 pnpm typecheck                 # tsc across the dashboard
@@ -65,9 +78,8 @@ cd services/api && uv run ruff check app
 ```
 
 The frontend suite renders the real components against a mocked API client. It
-includes regression tests for three defects that shipped in the dashboard: a
-hard-coded agent count, a pre-filled inspection URL that could not resolve, and
-a backend `restart` endpoint nothing in the UI ever called.
+covers the URL/permission gates, report minimize/restore control, live engine
+labels, restart flow, and export formats.
 
 ---
 
@@ -208,17 +220,21 @@ finding.created
 ## Configuration
 
 Everything is a `PROBE_`-prefixed env var — copy [`.env.example`](.env.example)
-to `.env`. Nothing is required; the defaults run offline.
+to the repository-root `.env`. A live inspection uses real Chromium; configure a
+model provider to have every explorer and Review AI use an LLM. If no provider is
+configured, the UI/report explicitly labels the run as heuristic rather than
+LLM-driven.
 
 ```bash
 # LLM — provider-agnostic, see "Plugging in a provider" below
-PROBE_LLM_PROVIDER=none            # none | openai | anthropic | gemini | openai-compatible
+PROBE_LLM_PROVIDER=none            # configure a provider for live model-driven inspections
+PROBE_ALLOW_HEURISTIC_MODE=false  # true only for explicit offline/test runs
 PROBE_LLM_MODEL=
 PROBE_LLM_API_KEY=
 PROBE_LLM_BASE_URL=                # only for openai-compatible
 
 # Browser
-PROBE_BROWSER_MODE=auto            # auto | playwright | mock
+PROBE_BROWSER_MODE=playwright      # playwright | auto (strict Chromium) | mock (DemoShop test only)
 PROBE_HEADLESS=true
 PROBE_RECORD_VIDEO=false
 
@@ -236,6 +252,11 @@ PROBE_DATA_DIR=data
 PROBE_CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 ```
 
+The new-inspection form requires an authorization confirmation. The browser is
+read-only by default (mutating HTTP methods and common payment/delete controls
+are blocked). `allow_mutations` is saved per inspection and should only be enabled
+for an authorized staging/test target; it can change real data.
+
 ---
 
 ## Plugging in a provider
@@ -248,14 +269,30 @@ class LLMClient(ABC):
     async def complete(self, *, system: str, messages: list[dict]) -> str: ...
 ```
 
-`create_llm(settings)` in `app/llm/factory.py` picks an implementation from
-`PROBE_LLM_PROVIDER` and returns `None` when it is `none`, which is what makes
-the deterministic policies take over. Three implementations ship today:
+`create_llm(settings)` in `app/llm/factory.py` picks one configured client and
+shares it across every selected explorer and Review AI. Setting the provider to
+`none` explicitly selects deterministic policies. Once a model is configured,
+a decision error fails that agent visibly; it is not silently replaced with a
+policy-driven result. Three provider families ship today:
 
 - `OpenAICompatibleClient` — anything speaking the OpenAI chat-completions API
   (OpenAI itself, OpenRouter, vLLM, Ollama, LM Studio, …)
 - `AnthropicClient` — the Messages API
 - `GeminiClient` — `generateContent`
+
+For a self-hosted OpenAI-compatible model (Ollama, vLLM, or LM Studio), set the
+provider, model, and endpoint in the root `.env`, for example:
+
+```dotenv
+PROBE_LLM_PROVIDER=openai-compatible
+PROBE_LLM_MODEL=qwen2.5:7b
+PROBE_LLM_BASE_URL=http://127.0.0.1:11434/v1
+PROBE_LLM_API_KEY=
+```
+
+The same configured client is used for every selected explorer and Review AI.
+Keep the endpoint reachable from the API process (for containers, this may be a
+host gateway rather than `127.0.0.1`).
 
 `decide()` is a **forced tool call**: the model must answer by calling the
 `probe_action` tool whose schema is the entire action surface (`click`,
@@ -293,7 +330,7 @@ probe/
 │   │   ├── events.py        EventBus (persist + WebSocket fan-out)
 │   │   ├── db.py            stdlib sqlite3 repositories
 │   │   └── schemas.py       Pydantic models
-│   └── tests/           26 tests
+│   └── tests/           31 tests
 ├── scripts/dev.sh       start API + dashboard + demo shop together
 └── .env.example
 ```
@@ -304,6 +341,15 @@ Deeper design notes: [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ## Known limitations
 
+- **No zero-mistake guarantee.** PROBE reports the pages, controls, and paths it
+  actually exercised at the selected depth. An LLM or browser heuristic can miss
+  defects or misclassify a symptom; confidence is an evidence/reproduction signal,
+  not a guarantee that a result is correct or that untested paths are defect-free.
+- **Live browser fails closed.** If Chromium cannot start, the run is marked failed;
+  it never switches to a simulator. The simulator is opt-in and labelled as such.
+- **Read-only protection is not a complete sandbox.** It blocks common write
+  methods and high-impact controls, but users should still use an authorized
+  staging site. Enabling mutation testing can change or create real data.
 - **Element identity.** Ids are assigned deterministically from element
   identity (tag, aria/placeholder/name, href, type), so they survive
   re-renders and typing. A control that is genuinely removed from the DOM

@@ -28,6 +28,8 @@ def create_llm(
         return None
 
     if provider == "openai":
+        if not api_key:
+            raise ValueError("PROBE_LLM_API_KEY is required for the openai provider")
         return OpenAICompatibleClient(
             model=model or DEFAULT_MODELS["openai"],
             api_key=api_key,

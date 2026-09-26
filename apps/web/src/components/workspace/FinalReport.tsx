@@ -6,7 +6,13 @@ import { agentMeta, classificationStyle, severityStyle } from "../../lib/format"
 import type { ReportResponse } from "../../types";
 import { Button, EmptyState, PanelHeader, SeverityBar, Spinner } from "../ui";
 
-export default function FinalReport({ inspectionId }: { inspectionId: string }) {
+export default function FinalReport({
+  inspectionId,
+  onMinimize,
+}: {
+  inspectionId: string;
+  onMinimize?: () => void;
+}) {
   const [report, setReport] = useState<ReportResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -27,7 +33,17 @@ export default function FinalReport({ inspectionId }: { inspectionId: string }) 
   if (error) {
     return (
       <>
-        <PanelHeader title="Final report" icon="🧠" />
+        <PanelHeader
+          title="Final report"
+          icon="🧠"
+          right={
+            onMinimize ? (
+              <Button size="sm" variant="ghost" onClick={onMinimize}>
+                − Minimize
+              </Button>
+            ) : null
+          }
+        />
         <EmptyState icon="⚠" title="Report unavailable" hint={error} />
       </>
     );
@@ -36,7 +52,17 @@ export default function FinalReport({ inspectionId }: { inspectionId: string }) 
   if (!report) {
     return (
       <>
-        <PanelHeader title="Final report" icon="🧠" />
+        <PanelHeader
+          title="Final report"
+          icon="🧠"
+          right={
+            onMinimize ? (
+              <Button size="sm" variant="ghost" onClick={onMinimize}>
+                − Minimize
+              </Button>
+            ) : null
+          }
+        />
         <div className="flex items-center justify-center py-10">
           <Spinner label="Review AI is assembling the report…" />
         </div>
@@ -57,7 +83,7 @@ export default function FinalReport({ inspectionId }: { inspectionId: string }) 
       <PanelHeader
         title="Final report"
         icon="🧠"
-        subtitle={`${report.application} · ${report.inspection} inspection · ${report.duration} · ${report.agent_count} agents · ${report.browser}`}
+        subtitle={`${report.application} · ${report.inspection} inspection · ${report.duration} · ${report.agent_count} agents · ${report.browser} · ${report.decision_engine?.mode === "llm" ? `${report.decision_engine.provider} · ${report.decision_engine.model}` : "heuristic policies"}${report.complete ? "" : " · partial report"}`}
         right={
           <div className="flex items-center gap-2">
             {report.correlated > 0 ? (
@@ -67,6 +93,11 @@ export default function FinalReport({ inspectionId }: { inspectionId: string }) 
               >
                 {report.correlated} correlated
               </span>
+            ) : null}
+            {onMinimize ? (
+              <Button size="sm" variant="ghost" onClick={onMinimize} title="Minimize the pinned report">
+                − Minimize
+              </Button>
             ) : null}
             <Button
               size="sm"
@@ -88,8 +119,21 @@ export default function FinalReport({ inspectionId }: { inspectionId: string }) 
         }
       />
 
-      <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="grid min-h-0 gap-4 overflow-y-auto p-4 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="space-y-4">
+          {!report.complete ? (
+            <p className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs leading-relaxed text-amber-200/90">
+              This run is incomplete. Findings below are only from agents that finished; do not
+              treat this report as full site coverage.
+            </p>
+          ) : null}
+          {report.warnings?.length ? (
+            <ul className="space-y-1 rounded-lg border border-ink-700 bg-ink-850/60 p-3 text-xs leading-relaxed text-slate-400">
+              {report.warnings.map((warning) => (
+                <li key={warning}>• {warning}</li>
+              ))}
+            </ul>
+          ) : null}
           {report.summary ? (
             <p className="rounded-lg border border-ink-700 bg-ink-850/60 p-4 text-sm leading-relaxed text-slate-300">
               {report.summary}

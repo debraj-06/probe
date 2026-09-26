@@ -17,9 +17,10 @@ vi.mock("../lib/api", () => ({ api: apiMock }));
 const HEALTH: Health = {
   status: "ok",
   app: "PROBE",
-  llm_provider: "none",
-  llm_model: "—",
-  browser_mode: "mock",
+  llm_provider: "openai-compatible",
+  llm_model: "test-model",
+  allow_heuristic_mode: false,
+  browser_mode: "playwright",
   active_inspections: 0,
 };
 
@@ -39,24 +40,37 @@ describe("NewInspection", () => {
     apiMock.health.mockReset().mockResolvedValue(HEALTH);
   });
 
-  /**
-   * Regression: the form used to pre-fill `https://demoshop.local` — HTTPS with
-   * no port, which resolves to nothing, so the default "Start inspection" click
-   * could never reach the demo shop it exists to demonstrate.
-   */
-  it("pre-fills a URL that actually reaches the demo shop", () => {
+  it("starts with a blank URL so a demo target is never silently inspected by default", () => {
     renderForm();
     const input = screen.getByLabelText("Website URL") as HTMLInputElement;
-
-    const parsed = new URL(input.value);
-    expect(parsed.protocol).toBe("http:");
-    expect(parsed.hostname).toBe("127.0.0.1");
-    expect(parsed.port).toBe("5174");
+    expect(input.value).toBe("");
+    expect(screen.getByRole("button", { name: "Start inspection" })).toBeDisabled();
   });
 
-  it("starts with a valid form the user can submit immediately", () => {
+  it("requires explicit site authorization before starting", async () => {
+    const user = userEvent.setup();
     renderForm();
+    await user.type(screen.getByLabelText("Website URL"), "example.com");
+    expect(screen.getByRole("button", { name: "Start inspection" })).toBeDisabled();
+    await user.click(screen.getByLabelText(/I own this website or have explicit permission/));
     expect(screen.getByRole("button", { name: "Start inspection" })).toBeEnabled();
+  });
+
+  it("blocks live inspection when no LLM is configured unless offline mode is explicitly enabled", async () => {
+    apiMock.health.mockResolvedValue({
+      ...HEALTH,
+      llm_provider: "none",
+      llm_model: "—",
+      allow_heuristic_mode: false,
+    });
+    const user = userEvent.setup();
+    renderForm();
+
+    await user.type(screen.getByLabelText("Website URL"), "example.com");
+    await user.click(screen.getByLabelText(/I own this website or have explicit permission/));
+
+    expect(await screen.findByText(/Live inspections are disabled until you set/)).toBeDefined();
+    expect(screen.getByRole("button", { name: "Start inspection" })).toBeDisabled();
   });
 
   it("rejects an unusable URL and says why", async () => {
@@ -82,7 +96,8 @@ describe("NewInspection", () => {
     await user.tab();
 
     expect(screen.queryByText("That is not a valid URL.")).toBeNull();
-    expect(screen.getByRole("button", { name: "Start inspection" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Start inspection" })).toBeDisabled();
+    await user.click(screen.getByLabelText(/I own this website or have explicit permission/));
 
     await user.click(screen.getByRole("button", { name: "Start inspection" }));
     await waitFor(() => expect(apiMock.createInspection).toHaveBeenCalled());
@@ -95,6 +110,9 @@ describe("NewInspection", () => {
 
     await user.click(screen.getByLabelText(/Deep/));
     await user.click(screen.getByLabelText(/Chaos/)); // untick one of the four
+    await user.click(screen.getByLabelText("Website URL"));
+    await user.type(screen.getByLabelText("Website URL"), "example.com");
+    await user.click(screen.getByLabelText(/I own this website or have explicit permission/));
 
     await user.click(screen.getByRole("button", { name: "Start inspection" }));
 
@@ -109,6 +127,8 @@ describe("NewInspection", () => {
     const user = userEvent.setup();
     renderForm();
 
+    await user.type(screen.getByLabelText("Website URL"), "example.com");
+    await user.click(screen.getByLabelText(/I own this website or have explicit permission/));
     await user.click(screen.getByRole("button", { name: "Start inspection" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("422 bad url");

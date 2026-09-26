@@ -114,7 +114,7 @@ class ReviewAgent:
 
         await ctx.emit(
             "review.completed",
-            f"Review AI validated {len(discoveries)} discovery(ies) into "
+            f"Review AI reviewed {len(discoveries)} discovery(ies) into "
             f"{len(findings)} finding(s)",
             agent=self.role,
             data={"findings": len(findings), "summary": summary},
@@ -295,7 +295,7 @@ class ReviewAgent:
         reproduced = any(d.reproduced and not d.reproduced.startswith("0 /") for d in discoveries)
         if strong_evidence and reproduced:
             return "confirmed_defect"
-        if head.severity in {"critical", "high"}:
+        if reproduced and head.severity in {"critical", "high"}:
             return "confirmed_defect"
         return "improvement"
 
@@ -344,32 +344,35 @@ class ReviewAgent:
         )
         correlated = [f for f in findings if f["correlated"]]
         summary = (
-            f"{len(findings)} finding(s) validated ({breakdown}). "
+            f"{len(findings)} finding(s) reviewed ({breakdown}). "
             f"{len(correlated)} finding(s) were correlated across multiple agent perspectives."
         )
 
         if self.llm is None:
             return summary
 
-        try:
-            prompt = (
-                "You are Review AI. Write a 3-4 sentence executive summary of this "
-                "autonomous web inspection. Be specific and concrete.\n\n"
-                f"TARGET: {ctx.inspection['url']}\n"
-                f"DEPTH: {ctx.inspection['depth']}\n"
-                f"FINDINGS: {len(findings)} ({breakdown})\n\n"
-                + "\n".join(
-                    f"- [{f['severity']}] {f['title']} "
-                    f"(agents: {', '.join(f['agents'])}; reproduced {f['reproduced']})"
-                    for f in findings[:15]
-                )
+        prompt = (
+            "Write a concise executive summary using only the inspection facts below. "
+            "Distinguish reproduced issues from unconfirmed observations; do not call a finding "
+            "confirmed unless its reproduction count is above zero. Do not claim untested flows are "
+            "defect-free or add findings that are not listed.\n\n"
+            f"TARGET: {ctx.inspection['url']}\n"
+            f"DEPTH: {ctx.inspection['depth']}\n"
+            f"FINDINGS: {len(findings)} ({breakdown})\n\n"
+            + "\n".join(
+                f"- [{f['severity']}] {f['title']} "
+                f"(agents: {', '.join(f['agents'])}; reproduced {f['reproduced']})"
+                for f in findings[:15]
             )
+        )
+        try:
             text = await self.llm.complete(
                 system="You are Review AI, the quality layer of an autonomous testing platform.",
                 prompt=prompt,
             )
-            if text and text.strip():
-                return text.strip()[:1500]
-        except Exception as exc:  # noqa: BLE001 - the deterministic summary is fine
-            logger.warning("Review AI summarisation failed: %s", exc)
-        return summary
+        except Exception:
+            logger.exception("Review AI summary model call failed")
+            raise RuntimeError("The configured review model could not complete the report.") from None
+        if not text or not text.strip():
+            raise RuntimeError("The configured review model returned an empty report summary.")
+        return text.strip()[:1500]

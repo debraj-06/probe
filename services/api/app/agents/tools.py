@@ -18,7 +18,6 @@ ACTIONS: tuple[str, ...] = (
     "get_dom",
     "get_console_errors",
     "get_network_logs",
-    "report_finding",
     "finish",
 )
 
@@ -67,7 +66,7 @@ DECISION_SCHEMA: dict[str, Any] = {
     "properties": {
         "thought": {
             "type": "string",
-            "description": "Your reasoning about what the page shows and what to try next.",
+            "description": "A brief private planning note; do not provide hidden chain-of-thought.",
         },
         "action": {
             "type": "string",

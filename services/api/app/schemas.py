@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -32,6 +33,10 @@ class InspectionCreate(BaseModel):
     depth: Depth = "balanced"
     focus: list[FocusArea] = Field(default_factory=lambda: ["technical", "ux", "chaos", "user"])
     goals: list[str] = Field(default_factory=list)
+    # Consent is explicit and enforced at the API, not just by the UI.
+    authorized: bool = False
+    # By default the browser blocks write methods and high-impact controls.
+    allow_mutations: bool = False
     autostart: bool = True
 
     @field_validator("url")
@@ -40,10 +45,20 @@ class InspectionCreate(BaseModel):
         value = (value or "").strip()
         if not value:
             raise ValueError("url is required")
-        if not value.startswith(("http://", "https://")):
+        if "://" not in value:
             value = f"https://{value}"
-        if len(value) < 9 or "." not in value.split("//", 1)[-1]:
-            raise ValueError("url does not look like a website address")
+        try:
+            parsed = urlsplit(value)
+            # Accessing .port validates malformed/out-of-range ports.
+            _ = parsed.port
+        except ValueError as exc:
+            raise ValueError("url has an invalid host or port") from exc
+        if parsed.scheme.lower() not in {"http", "https"}:
+            raise ValueError("only http:// and https:// website URLs are supported")
+        if not parsed.hostname or parsed.username or parsed.password:
+            raise ValueError("url must contain a host and must not include credentials")
+        if any(char.isspace() for char in value):
+            raise ValueError("url must not contain spaces")
         return value
 
     @field_validator("goals")
@@ -58,6 +73,8 @@ class InspectionOut(BaseModel):
     depth: str
     focus: list[str]
     goals: list[str]
+    authorized: bool = False
+    allow_mutations: bool = False
     status: str
     error: str | None = None
     created_at: str
@@ -152,6 +169,11 @@ class ReportOut(BaseModel):
     top_findings: list[dict[str, Any]] = Field(default_factory=list)
     correlated: int = 0
     browser: str = "chromium"
+    decision_engine: dict[str, Any] = Field(default_factory=dict)
+    complete: bool = True
+    warnings: list[str] = Field(default_factory=list)
+    failed_agents: list[str] = Field(default_factory=list)
+    allow_mutations: bool = False
     generated_at: str | None = None
     summary: str | None = None
     items: list[FindingOut] = Field(default_factory=list)
@@ -162,6 +184,7 @@ class HealthOut(BaseModel):
     app: str
     llm_provider: str
     llm_model: str
+    allow_heuristic_mode: bool = False
     browser_mode: str
     active_inspections: int
 

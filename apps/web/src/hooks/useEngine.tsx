@@ -68,7 +68,7 @@ export function browserLabel(mode: string | undefined): string {
     case "mock":
       return "Simulator";
     case "auto":
-      return "Auto";
+      return "Chromium (strict auto)";
     default:
       return mode ?? "unknown";
   }

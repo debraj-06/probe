@@ -111,9 +111,9 @@ export default function Dashboard() {
             </div>
           ) : null}
           <p className="ml-auto hidden text-[11px] text-slate-600 lg:block">
-            {health?.browser_mode === "playwright"
-              ? "real Chromium"
-              : "simulator engine — install Chromium for live browsing"}
+            {health?.browser_mode === "mock"
+              ? "DemoShop simulator only — no live website visits"
+              : "real Chromium; browser failures do not fall back to simulation"}
           </p>
         </div>
 
@@ -127,7 +127,7 @@ export default function Dashboard() {
           <StatCard
             label="Findings"
             value={findings}
-            hint="validated by Review AI"
+            hint="reviewed against collected evidence"
             accent={worst > 0 ? "text-orange-300" : "text-probe-300"}
             bar={worst > 0 ? "bg-orange-400" : "bg-probe-400"}
           >

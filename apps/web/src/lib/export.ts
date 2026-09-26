@@ -44,7 +44,17 @@ export function reportToMarkdown(report: ReportResponse): string {
   lines.push(`- **Duration:** ${report.duration}`);
   lines.push(`- **Agents:** ${report.agent_count}`);
   lines.push(`- **Browser engine:** ${report.browser}`);
+  lines.push(
+    `- **Decision engine:** ${report.decision_engine?.mode === "llm" ? `${report.decision_engine.provider} · ${report.decision_engine.model}` : "heuristic policies"}`,
+  );
+  lines.push(`- **Coverage status:** ${report.complete ? "all agents completed" : "partial — one or more agents failed"}`);
   if (report.generated_at) lines.push(`- **Generated:** ${report.generated_at}`);
+  if (report.warnings?.length) {
+    lines.push("");
+    lines.push("## Run warnings");
+    lines.push("");
+    for (const warning of report.warnings) lines.push(`- ${warning}`);
+  }
   lines.push("");
 
   lines.push("## Summary");

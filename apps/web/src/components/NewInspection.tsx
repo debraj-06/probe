@@ -22,13 +22,7 @@ const FOCUS: Array<{ value: FocusArea; label: string; icon: string; hint: string
 
 const ALL_FOCUS: FocusArea[] = ["technical", "ux", "chaos", "user"];
 
-/**
- * The demo shop is served by Vite on plain HTTP port 5174. Earlier this form
- * defaulted to `https://demoshop.local` — an HTTPS host with no port, which
- * resolves to nothing, so hitting "Start inspection" with the pre-filled value
- * always failed. `127.0.0.1` is used rather than `localhost` because it is the
- * backend that dials this URL, and 127.0.0.1 needs no hosts-file entry.
- */
+/** Local DemoShop is offered as an explicit test target, never pre-selected. */
 const DEMO_URL = "http://127.0.0.1:5174/";
 
 const SUGGESTIONS = [
@@ -61,16 +55,21 @@ function urlError(raw: string): string | null {
 export default function NewInspection() {
   const navigate = useNavigate();
   const { health } = useEngineStatus();
-  const [url, setUrl] = useState(DEMO_URL);
+  const [url, setUrl] = useState("");
   const [depth, setDepth] = useState<Depth>("balanced");
   const [focus, setFocus] = useState<FocusArea[]>(ALL_FOCUS);
   const [goals, setGoals] = useState("");
+  const [authorized, setAuthorized] = useState(false);
+  const [allowMutations, setAllowMutations] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [touched, setTouched] = useState(false);
 
   const validation = useMemo(() => urlError(url), [url]);
-  const canSubmit = !validation && !submitting;
+  const llmReady = health
+    ? health.llm_provider !== "none" || health.allow_heuristic_mode
+    : true;
+  const canSubmit = !validation && authorized && llmReady && !submitting;
   const depthMeta = DEPTHS.find((option) => option.value === depth)!;
 
   const toggleFocus = (value: FocusArea) => {
@@ -93,6 +92,8 @@ export default function NewInspection() {
         .split("\n")
         .map((line) => line.trim())
         .filter(Boolean),
+      authorized,
+      allow_mutations: allowMutations,
     };
     try {
       const inspection = await api.createInspection(payload);
@@ -271,6 +272,45 @@ export default function NewInspection() {
           </p>
         </Panel>
 
+        {/* permission and safe browsing -------------------------------- */}
+        <Panel className="space-y-4 p-5">
+          <label className="flex cursor-pointer items-start gap-3 text-sm text-slate-300">
+            <input
+              type="checkbox"
+              checked={authorized}
+              onChange={(event) => setAuthorized(event.target.checked)}
+              className="mt-1 accent-cyan-400"
+              required
+            />
+            <span>
+              I own this website or have explicit permission to test it.
+              <span className="mt-1 block text-xs leading-relaxed text-slate-500">
+                PROBE opens the live site in Chromium and interacts with its visible controls. Use a
+                staging/test environment where possible; automated checks cannot guarantee a
+                defect-free result.
+              </span>
+            </span>
+          </label>
+          <div className="border-t border-ink-700/70 pt-4">
+            <label className="flex cursor-pointer items-start gap-3 text-sm text-slate-300">
+              <input
+                type="checkbox"
+                checked={allowMutations}
+                onChange={(event) => setAllowMutations(event.target.checked)}
+                className="mt-1 accent-amber-400"
+              />
+              <span>
+                Allow write requests and high-impact actions
+                <span className="mt-1 block text-xs leading-relaxed text-slate-500">
+                  Off by default: POST, PUT, PATCH, DELETE requests and common payment/delete
+                  controls are blocked. Turn this on only for a disposable staging site. It can
+                  create or change real data.
+                </span>
+              </span>
+            </label>
+          </div>
+        </Panel>
+
         {/* engine note --------------------------------------------------- */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-ink-700/70 bg-ink-900/50 px-4 py-2.5 text-[11px] text-slate-500">
           <span>
@@ -286,6 +326,22 @@ export default function NewInspection() {
             </span>
           </span>
         </div>
+        {health?.llm_provider === "none" ? (
+          <p className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-xs leading-relaxed text-amber-200/80">
+            No LLM is configured. Live inspections are disabled until you set
+            <code className="mx-1 font-mono">PROBE_LLM_PROVIDER</code> and the matching model/API
+            settings for all agents and Review AI. For an explicit offline/demo run only, an
+            operator can opt in with
+            <code className="mx-1 font-mono">PROBE_ALLOW_HEURISTIC_MODE=true</code>.
+          </p>
+        ) : null}
+        {health?.browser_mode === "mock" ? (
+          <p className="rounded-lg border border-rose-500/30 bg-rose-500/5 px-4 py-3 text-xs leading-relaxed text-rose-200/80">
+            Simulator mode is enabled. It does not visit the URL or produce live-site findings.
+            Set <code className="font-mono">PROBE_BROWSER_MODE=playwright</code> for real
+            Chromium inspection.
+          </p>
+        ) : null}
 
         {error ? (
           <p

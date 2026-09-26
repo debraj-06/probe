@@ -44,8 +44,12 @@ observe ──▶ decide ──▶ execute ──▶ detect_anomalies ──▶ 
 
 ### `decide` — policy or model
 
-`Decision.source` records which one fired. With `PROBE_LLM_PROVIDER=none` the
-`app/agents/policy.py` classes run:
+`Decision.source` records which one fired. A configured provider drives every
+explorer's browser decisions and Review AI's final summary. The API blocks new
+inspections when `PROBE_LLM_PROVIDER=none` unless the operator explicitly sets
+`PROBE_ALLOW_HEURISTIC_MODE=true` (for tests/offline demos). A failed configured
+model is never silently replaced by a policy: the agent is marked failed and
+the inspection report is partial.
 
 | Policy | Bias |
 |---|---|
@@ -112,7 +116,7 @@ twice. Discoveries go to `ReviewAgent`.
 `app/agents/review.py`. Runs once, after every explorer finishes.
 
 ```
-discoveries ──▶ dedupe ──▶ correlate ──▶ classify ──▶ (optional) LLM summary
+discoveries ──▶ dedupe ──▶ correlate ──▶ classify ──▶ LLM summary when configured
                                                               │
                                                    contributing_factors
                                                    merged recommendations
@@ -128,10 +132,11 @@ contributing agent in `agents[]` and every observation in
 Interaction produces no visible feedback (observed by user)
 ```
 
-**Classification** is rule-based: `ux_issue` for ux/ui/accessibility,
-`confirmed_defect` for high/critical severity or strong console/network
-evidence plus a reproduction, `improvement` otherwise. With an LLM configured,
-the model writes the prose summary — the grouping stays deterministic.
+**Classification** is evidence-led: `ux_issue` for UX/UI/accessibility
+observations, `confirmed_defect` for reproducible high-impact symptoms or strong
+console/network evidence plus a reproduction, and `improvement` for the rest.
+Severity/confidence remain evidence-derived rather than model-controlled. The
+model writes the executive summary when configured; grouping stays deterministic.
 
 ---
 
@@ -154,17 +159,14 @@ Two implementations behind that one interface:
 - **`PlaywrightController`** — real Chromium, records console messages and
   network responses, attaches `data-probe-id` to every visible element.
 - **`MockBrowser`** — a hash-routed simulator of the demo shop with the same
-  six planted defects. Used when Chromium is unavailable, and by the tests.
+  six planted defects. Used only when `browser_mode=mock` is explicitly selected
+  (for tests and local demos); its reports are labelled as simulated.
 
-`BrowserPool.create()` implements `browser_mode`:
-
-```
-auto ──────▶ try Playwright ──ok──▶ use it
-                 │
-                 └──fail──▶ MockBrowser (fell_back = true, surfaced in the report)
-playwright ─▶ Playwright, hard error if it cannot launch
-mock ──────▶ MockBrowser
-```
+`auto` and `playwright` both require real Chromium. If launch fails, the agent
+fails visibly; there is no automatic simulator fallback. The browser is
+read-only by default: POST/PUT/PATCH/DELETE requests and common high-impact
+controls are blocked unless the authorized inspection explicitly enables
+`allow_mutations`.
 
 ### Element identity
 
@@ -238,8 +240,13 @@ findings, critical, high, medium, low, info
 by_category, groups
 top_findings          # ordered digest — id, title, severity, category,
                       #   classification, confidence, correlated, agents
-correlated, browser, generated_at
+correlated, browser, decision_engine, complete, failed_agents
+warnings, allow_mutations, generated_at
 ```
+
+Every report warns that findings cover only exercised flows and that confidence
+is not an accuracy or full-coverage guarantee. Simulator, heuristic, partial-run,
+and mutation-mode disclosures are included when applicable.
 
 `top_findings` exists because the dashboard needs a short ordered list, not the
 full finding objects; the frontend's `ReportFindingSummary` maps onto it
@@ -257,14 +264,15 @@ Vite + React 18 + TypeScript + Tailwind v4, hash-routed:
 /i/:id           InspectionWorkspace
                  ├── AgentsPanel      live status per agent
                  ├── LivePreview      newest screenshot
-                 ├── ActivityFeed     folded event stream
+                 ├── ActivityFeed     sanitized user-facing work log
                  ├── FindingsFeed     list + FindingDetail
-                 └── FinalReport      severity counts, top findings, download
+                 └── FinalReport      pinned, minimizable report + exports
 ```
 
 `useInspectionStream` opens the WebSocket and **also** polls REST every 4s, so
 the workspace keeps working if the socket drops. Events are folded into agent,
-screenshot, finding and activity state.
+screenshot, finding and activity state. The activity feed is an allowlisted,
+sanitized work log; model reasoning and tool arguments are not exposed.
 
 The Vite dev server proxies `/api`, `/evidence` and `/ws` to the backend, so the
 browser never needs to know where the API lives — which is what makes the
@@ -289,7 +297,7 @@ function calling is therefore a drop-in.
 
 | Value | Implementation |
 |---|---|
-| `none` | `None` → policies take over |
+| `none` | `None` → inspection creation is blocked unless `PROBE_ALLOW_HEURISTIC_MODE=true` explicitly opts into policies |
 | `openai` | `OpenAICompatibleClient` |
 | `openai-compatible` | `OpenAICompatibleClient` + `PROBE_LLM_BASE_URL` |
 | `anthropic` | `AnthropicClient` |
@@ -319,14 +327,15 @@ Verify with `ldd ~/.cache/ms-playwright/chromium*/chrome-linux/chrome | grep "no
 — it must print nothing. PROBE is launched with `--no-sandbox`, so it works as
 an unprivileged user.
 
-If any of this is missing, `browser_mode=auto` falls back to the simulator
-rather than failing the inspection.
+If any of this is missing, a live inspection fails visibly rather than
+substituting the simulator. Use `browser_mode=mock` only for DemoShop and CI
+runs; those reports are labelled as simulated.
 
 ---
 
 ## 11. Tests
 
-`services/api/tests/` — 26 tests, `uv run pytest` from `services/api`.
+`services/api/tests/` — 31 tests, `uv run pytest` from `services/api`.
 
 | File | Covers |
 |---|---|
@@ -334,8 +343,9 @@ rather than failing the inspection.
 | `test_agents.py` | simulator defects, anomaly detection, every policy, Review dedupe/correlate, LLM schema helpers, a full orchestrator run |
 
 `conftest.py` builds a `Settings` fixture with `browser_mode="mock"`,
-`llm_provider="none"` and a tmp data dir, and exposes `wait_for_finish()` which
-polls until the inspection leaves `running`. `pythonpath = ["."]` in
+`llm_provider="none"`, explicit `allow_heuristic_mode=True` and a tmp data dir,
+and exposes `wait_for_finish()` which polls until the inspection leaves
+`running`. `pythonpath = ["."]` in
 `pyproject.toml` is what lets the tests import `app` without an install step.
 
 Run with the simulator so the suite is deterministic and needs no browser.

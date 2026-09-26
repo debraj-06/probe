@@ -29,8 +29,13 @@ const REPORT: ReportResponse = {
   top_findings: [],
   correlated: 1,
   browser: "simulator",
+  decision_engine: { mode: "heuristic", provider: "none", model: "" },
+  complete: true,
+  warnings: ["Simulator mode was used; this run did not inspect the live website."],
+  failed_agents: [],
+  allow_mutations: false,
   generated_at: "2026-09-25T09:35:51.261+00:00",
-  summary: "2 finding(s) validated (0 critical, 1 high, 1 medium, 0 low, 0 info).",
+  summary: "2 finding(s) reviewed (0 critical, 1 high, 1 medium, 0 low, 0 info).",
   items: [
     {
       id: "find_1",
@@ -69,7 +74,7 @@ describe("reportToMarkdown", () => {
   });
 
   it("includes the Review AI summary", () => {
-    expect(markdown).toContain("2 finding(s) validated");
+    expect(markdown).toContain("2 finding(s) reviewed");
   });
 
   it("notes correlation when the Review AI merged findings", () => {
