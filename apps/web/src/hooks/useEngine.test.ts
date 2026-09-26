@@ -6,7 +6,7 @@ describe("browserLabel", () => {
   it("names the engine a human would recognise", () => {
     expect(browserLabel("playwright")).toBe("Chromium");
     expect(browserLabel("mock")).toBe("Simulator");
-    expect(browserLabel("auto")).toBe("Auto");
+    expect(browserLabel("auto")).toBe("Chromium (strict auto)");
   });
 
   it("survives a missing health response", () => {

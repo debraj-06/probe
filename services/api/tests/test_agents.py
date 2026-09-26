@@ -6,17 +6,19 @@ import asyncio
 
 import pytest
 
-from app.agents.base import Agent, AgentContext, Decision, detect_anomalies
-from app.agents.policy import ChaosPolicy, TechnicalPolicy, UserPolicy, create_policy
+from app.agents.base import Agent, AgentContext, detect_anomalies
+from app.agents.policy import ChaosPolicy, TechnicalPolicy, UserPolicy
 from app.agents.review import ReviewAgent, _similarity
+from app.agents.roles import TECHNICAL
 from app.browser.base import ActionResult, Observation
+from app.browser.controller import should_block_request
 from app.browser.mock import MockBrowser
 from app.config import Settings
 from app.db import Database
 from app.events import EventBus
 from app.evidence import EvidenceStore
-from app.llm.base import to_gemini_schema, extract_json_object
-from app.orchestrator import Orchestrator
+from app.llm.base import extract_json_object, to_gemini_schema
+from app.orchestrator import BrowserPool, Orchestrator
 
 
 # ---------------------------------------------------------------------------
@@ -28,7 +30,6 @@ async def test_simulator_reproduces_duplicate_payment(tmp_path):
     await browser.start()
     await browser.navigate("https://demoshop.local/#/checkout")
     await browser.click("Pay now")
-    before = await browser.get_state()
     await browser.click("Pay now")  # rapid second click
     after = await browser.get_state()
 
@@ -306,6 +307,65 @@ def test_extract_json_object_from_messy_output():
     assert extract_json_object('noise {"a": 1} tail') == {"a": 1}
     assert extract_json_object('```json\n{"b": 2}\n```') == {"b": 2}
     assert extract_json_object("nothing here") is None
+
+
+@pytest.mark.asyncio
+async def test_configured_llm_failure_does_not_fall_back_to_policy():
+    class BrokenLLM:
+        async def decide(self, **_kwargs):
+            raise RuntimeError("model unavailable")
+
+    class MustNotRunPolicy:
+        def decide(self, *_args):
+            raise AssertionError("policy fallback hid the configured model failure")
+
+    ctx = AgentContext(
+        inspection={"url": "https://x.test", "depth": "quick", "focus": ["technical"], "goals": []},
+        db=None,
+        bus=None,
+        evidence=None,
+        llm=None,
+        create_browser=lambda _label: None,
+        cancel=None,
+    )
+    agent = Agent(TECHNICAL, llm=BrokenLLM(), max_steps=8, policy=MustNotRunPolicy())
+
+    with pytest.raises(RuntimeError, match="model unavailable"):
+        await agent.decide(ctx, _observation(), 1)
+
+
+def test_browser_read_only_guard_blocks_mutating_http_methods():
+    assert should_block_request("POST", allow_mutations=False)
+    assert should_block_request("delete", allow_mutations=False)
+    assert not should_block_request("GET", allow_mutations=False)
+    assert not should_block_request("POST", allow_mutations=True)
+
+
+@pytest.mark.asyncio
+async def test_real_browser_failure_never_falls_back_to_simulator(tmp_path, monkeypatch):
+    class FakePlaywright:
+        async def stop(self):
+            return None
+
+    class FakePlaywrightManager:
+        async def start(self):
+            return FakePlaywright()
+
+    class FailingController:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def start(self):
+            raise RuntimeError("Chromium is unavailable")
+
+    monkeypatch.setattr("playwright.async_api.async_playwright", lambda: FakePlaywrightManager())
+    monkeypatch.setattr("app.orchestrator.PlaywrightController", FailingController)
+    pool = BrowserPool(Settings(browser_mode="playwright", data_dir=tmp_path), "test")
+
+    with pytest.raises(RuntimeError, match="No simulator fallback"):
+        await pool.create("technical")
+    assert pool.fell_back is False
+    await pool.close()
 
 
 # ---------------------------------------------------------------------------

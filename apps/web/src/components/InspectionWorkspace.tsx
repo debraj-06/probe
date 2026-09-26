@@ -21,6 +21,9 @@ export default function InspectionWorkspace() {
   const [stopping, setStopping] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [reportMinimized, setReportMinimized] = useState(false);
+
+  useEffect(() => setReportMinimized(false), [id]);
 
   const findings = Object.values(stream.findings).sort(
     (a, b) => Number(b.correlated) - Number(a.correlated) || b.confidence - a.confidence,
@@ -102,7 +105,7 @@ export default function InspectionWorkspace() {
   const running = stream.status === "running";
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       {/* header ---------------------------------------------------------- */}
       <header className="z-10 flex flex-wrap items-center gap-3 border-b border-ink-700/70 bg-ink-950/70 px-4 py-3 backdrop-blur-sm sm:px-5">
         <div className="min-w-0 flex-1">
@@ -190,13 +193,35 @@ export default function InspectionWorkspace() {
         </Panel>
       </div>
 
-      {/* final report ---------------------------------------------------- */}
-      {!running ? (
-        <div className="px-3 pb-3">
-          <Panel>
-            <FinalReport inspectionId={inspection.id} />
-          </Panel>
-        </div>
+      {/* Pinned final report dock — it stays in the workspace while the user
+          reviews findings and can be collapsed to keep more room for the live work log. */}
+      {["completed", "failed", "stopped"].includes(stream.status) ? (
+        <section
+          aria-label="Pinned final report"
+          className={`z-20 w-full shrink-0 border-t border-ink-600/80 bg-ink-950/95 shadow-[0_-12px_36px_-24px_rgba(0,0,0,0.95)] backdrop-blur-md ${
+            reportMinimized ? "" : "h-[42vh] min-h-[190px] max-h-[480px]"
+          }`}
+        >
+          {reportMinimized ? (
+            <div className="flex h-12 items-center gap-3 px-4">
+              <span className="h-2 w-2 rounded-full bg-probe-400" />
+              <p className="min-w-0 flex-1 truncate text-sm font-medium text-slate-200">
+                Final report · {findings.length} finding{findings.length === 1 ? "" : "s"}
+                {stream.status === "failed" ? " · partial run" : ""}
+              </p>
+              <Button size="sm" variant="ghost" onClick={() => setReportMinimized(false)}>
+                Expand report
+              </Button>
+            </div>
+          ) : (
+            <Panel className="flex h-full min-h-0 flex-col overflow-hidden rounded-none border-x-0 border-b-0">
+              <FinalReport
+                inspectionId={inspection.id}
+                onMinimize={() => setReportMinimized(true)}
+              />
+            </Panel>
+          )}
+        </section>
       ) : null}
 
       {detail ? (

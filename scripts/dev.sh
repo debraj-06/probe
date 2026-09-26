@@ -14,12 +14,12 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 START_DEMO=1
-BROWSER_MODE="${PROBE_BROWSER_MODE:-auto}"
+FORCE_MOCK=0
 
 for arg in "$@"; do
   case "$arg" in
     --no-demo) START_DEMO=0 ;;
-    --mock)    BROWSER_MODE="mock" ;;
+    --mock)    FORCE_MOCK=1 ;;
     -h|--help)
       sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
@@ -30,6 +30,19 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+[ -f "$ROOT/.env" ] || { cp "$ROOT/.env.example" "$ROOT/.env"; echo "created .env from .env.example"; }
+BROWSER_MODE="${PROBE_BROWSER_MODE:-}"
+if [ -z "$BROWSER_MODE" ]; then
+  BROWSER_MODE="$(sed -nE 's/^[[:space:]]*PROBE_BROWSER_MODE[[:space:]]*=[[:space:]]*([^[:space:]#]+).*$/\1/p' "$ROOT/.env" | tail -n 1)"
+fi
+BROWSER_MODE="${BROWSER_MODE:-playwright}"
+if [ "$FORCE_MOCK" = "1" ]; then
+  BROWSER_MODE="mock"
+  # The CLI flag is explicit opt-in to an offline/demo run as well.
+  export PROBE_ALLOW_HEURISTIC_MODE=true
+fi
+export PROBE_BROWSER_MODE="$BROWSER_MODE"
 
 # pnpm and uv are usually installed per-user, so make sure they are on PATH.
 export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"
@@ -68,14 +81,13 @@ fi
 if [ "$BROWSER_MODE" != "mock" ] && [ ! -d "$HOME/.cache/ms-playwright" ]; then
   warn "no Playwright browsers found — installing Chromium"
   (cd "$ROOT/services/api" && uv run playwright install chromium) \
-    || warn "Chromium install failed; PROBE will fall back to the simulator"
+    || warn "Chromium install failed; real inspections will fail until Chromium is installed (no simulator fallback)"
 fi
-
-[ -f "$ROOT/.env" ] || { cp "$ROOT/.env.example" "$ROOT/.env"; log "created .env from .env.example"; }
 
 # --------------------------------------------------------------------------
 # API
 # --------------------------------------------------------------------------
+mkdir -p "$ROOT/data"
 log "starting API on http://127.0.0.1:8000"
 (cd "$ROOT/services/api" && PROBE_BROWSER_MODE="$BROWSER_MODE" uv run uvicorn app.main:app \
   --host 0.0.0.0 --port 8000 --log-level info >"$ROOT/data/api.log" 2>&1) &

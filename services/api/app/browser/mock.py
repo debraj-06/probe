@@ -39,7 +39,9 @@ LONG_INPUT_THRESHOLD = 200
 
 
 class MockBrowser(BrowserController):
-    """In-memory shop that mimics a real page closely enough to be tested."""
+    """In-memory DemoShop simulator for CI and explicitly requested demos only."""
+
+    simulated = True
 
     def __init__(self, *, label: str = "agent", latency: float = 1.2) -> None:
         self.label = label

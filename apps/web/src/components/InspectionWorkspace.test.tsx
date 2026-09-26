@@ -29,6 +29,8 @@ vi.mock("../hooks/useInspectionStream", () => ({
       depth: "quick",
       focus: ["chaos"],
       goals: [],
+      authorized: true,
+      allow_mutations: false,
       status: streamMock.status,
       error: null,
       created_at: "2026-09-25T09:35:45.869+00:00",
@@ -130,6 +132,17 @@ describe("InspectionWorkspace", () => {
 
     await waitFor(() => expect(apiMock.restartInspection).toHaveBeenCalledWith("insp_1"));
     expect(streamMock.refresh).toHaveBeenCalled();
+  });
+
+  it("keeps the final report pinned and lets the user minimize and restore it", async () => {
+    const user = userEvent.setup();
+    renderWorkspace();
+
+    await user.click(await screen.findByRole("button", { name: /Minimize/ }));
+    expect(screen.getByText(/Final report · 1 finding/)).toBeDefined();
+
+    await user.click(screen.getByRole("button", { name: "Expand report" }));
+    expect(await screen.findByRole("button", { name: /Minimize/ })).toBeDefined();
   });
 
   it("offers Stop instead of Re-run while agents are working", () => {

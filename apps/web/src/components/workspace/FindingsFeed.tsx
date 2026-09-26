@@ -20,7 +20,7 @@ export default function FindingsFeed({
         icon="🐞"
         subtitle={
           findings.length
-            ? `${findings.length} validated by Review AI`
+            ? `${findings.length} reviewed by Review AI`
             : status === "running"
               ? "agents are still investigating…"
               : "nothing surfaced"

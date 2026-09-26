@@ -18,6 +18,7 @@ def test_create_and_run_inspection(client):
         "/api/inspections",
         json={
             "url": "https://demoshop.local",
+            "authorized": True,
             "depth": "quick",
             "focus": ["technical", "chaos"],
         },
@@ -36,10 +37,18 @@ def test_create_and_run_inspection(client):
 def test_url_is_normalised(client):
     response = client.post(
         "/api/inspections",
-        json={"url": "demoshop.local", "depth": "quick", "autostart": False},
+        json={
+            "url": "demoshop.local",
+            "depth": "quick",
+            "authorized": True,
+            "allow_mutations": True,
+            "autostart": False,
+        },
     )
     assert response.status_code == 201
     assert response.json()["url"] == "https://demoshop.local"
+    assert response.json()["authorized"] is True
+    assert response.json()["allow_mutations"] is True
 
 
 def test_invalid_url_is_rejected(client):
@@ -47,10 +56,29 @@ def test_invalid_url_is_rejected(client):
     assert response.status_code == 422
 
 
+def test_inspection_requires_site_authorization(client):
+    response = client.post(
+        "/api/inspections",
+        json={"url": "https://example.com", "autostart": False},
+    )
+    assert response.status_code == 403
+    assert "permission to test it" in response.json()["detail"]
+
+
+def test_inspection_requires_configured_llm_unless_heuristics_are_explicitly_allowed(client):
+    client.app.state.services.settings.allow_heuristic_mode = False
+    response = client.post(
+        "/api/inspections",
+        json={"url": "https://example.com", "authorized": True, "autostart": False},
+    )
+    assert response.status_code == 503
+    assert "No LLM is configured" in response.json()["detail"]
+
+
 def test_events_stream_and_findings(client):
     created = client.post(
         "/api/inspections",
-        json={"url": "https://demoshop.local", "depth": "quick", "focus": ["chaos", "technical"]},
+        json={"url": "https://demoshop.local", "authorized": True, "depth": "quick", "focus": ["chaos", "technical"]},
     ).json()
     wait_for_finish(client, created["id"])
 
@@ -61,6 +89,13 @@ def test_events_stream_and_findings(client):
     assert "agent.started" in types
     assert "agent.action" in types
     assert "review.completed" in types
+    for event in events:
+        if event["type"] == "agent.thinking":
+            assert "args" not in event["data"]
+            assert "thought" not in event["message"].lower()
+        if event["type"] == "agent.action":
+            assert "args" not in event["data"]
+            assert "detail" not in event["data"]
 
     findings = client.get(f"/api/inspections/{created['id']}/findings").json()
     assert findings, "the simulator contains deliberate defects"
@@ -77,7 +112,7 @@ def test_events_stream_and_findings(client):
 def test_report(client):
     created = client.post(
         "/api/inspections",
-        json={"url": "https://demoshop.local", "depth": "quick", "focus": ["chaos"]},
+        json={"url": "https://demoshop.local", "authorized": True, "depth": "quick", "focus": ["chaos"]},
     ).json()
     wait_for_finish(client, created["id"])
 
@@ -85,6 +120,11 @@ def test_report(client):
     assert report["application"] == "demoshop.local"
     assert report["agent_count"] == 1
     assert report["findings"] == len(report["items"])
+    assert report["browser"] == "simulator"
+    assert report["decision_engine"]["mode"] == "heuristic"
+    assert report["complete"] is True
+    assert any("did not inspect the live website" in warning for warning in report["warnings"])
+    assert any("do not guarantee accuracy" in warning for warning in report["warnings"])
     assert report["high"] + report["medium"] + report["low"] + report["info"] + report[
         "critical"
     ] == report["findings"]
@@ -93,7 +133,7 @@ def test_report(client):
 def test_stop_inspection(client):
     created = client.post(
         "/api/inspections",
-        json={"url": "https://demoshop.local", "depth": "extreme", "focus": ["technical"]},
+        json={"url": "https://demoshop.local", "authorized": True, "depth": "extreme", "focus": ["technical"]},
     ).json()
     stopped = client.post(f"/api/inspections/{created['id']}/stop").json()
     assert stopped["stopping"] is True
@@ -110,7 +150,7 @@ def test_unknown_inspection_returns_404(client):
 def test_websocket_streams_events(client):
     created = client.post(
         "/api/inspections",
-        json={"url": "https://demoshop.local", "depth": "quick", "focus": ["chaos"]},
+        json={"url": "https://demoshop.local", "authorized": True, "depth": "quick", "focus": ["chaos"]},
     ).json()
 
     with client.websocket_connect(f"/ws/inspections/{created['id']}") as socket:

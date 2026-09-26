@@ -18,6 +18,7 @@ const HEALTH: Health = {
   app: "PROBE",
   llm_provider: "none",
   llm_model: "—",
+  allow_heuristic_mode: true,
   browser_mode: "mock",
   active_inspections: 0,
 };
@@ -30,6 +31,8 @@ function inspection(overrides: Partial<Inspection>): Inspection {
     depth: "quick",
     focus: ["chaos", "user"],
     goals: [],
+    authorized: true,
+    allow_mutations: false,
     status: "completed",
     error: null,
     created_at: "2026-09-25T09:35:45.869+00:00",

@@ -26,6 +26,7 @@ const HEALTHY = {
   app: "PROBE",
   llm_provider: "none",
   llm_model: "—",
+  allow_heuristic_mode: false,
   browser_mode: "auto",
   active_inspections: 0,
 };

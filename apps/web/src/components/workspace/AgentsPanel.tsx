@@ -8,6 +8,7 @@ const ORDER = ["technical", "ux", "chaos", "user", "review"];
 const STATE_COPY: Record<string, string> = {
   active: "Working…",
   done: "Finished.",
+  failed: "Could not complete.",
   idle: "Idle.",
 };
 
@@ -69,7 +70,9 @@ export default function AgentsPanel({
                       ? "animate-pulse-dot bg-probe-400"
                       : done
                         ? "bg-emerald-400"
-                        : "bg-ink-500"
+                        : status === "failed"
+                          ? "bg-rose-400"
+                          : "bg-ink-500"
                   }`}
                 />
                 <span aria-hidden className="text-xs">

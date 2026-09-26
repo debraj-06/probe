@@ -22,6 +22,8 @@ CREATE TABLE IF NOT EXISTS inspections (
     depth        TEXT NOT NULL DEFAULT 'balanced',
     focus        TEXT NOT NULL DEFAULT '[]',
     goals        TEXT NOT NULL DEFAULT '[]',
+    authorized   INTEGER NOT NULL DEFAULT 0,
+    allow_mutations INTEGER NOT NULL DEFAULT 0,
     status       TEXT NOT NULL DEFAULT 'queued',
     error        TEXT,
     created_at   TEXT NOT NULL,
@@ -124,6 +126,20 @@ class Database:
         self._conn.row_factory = sqlite3.Row
         with self._lock:
             self._conn.executescript(SCHEMA)
+            # Keep existing local databases usable when the inspection schema
+            # grows. SQLite has no ``ADD COLUMN IF NOT EXISTS`` on all supported
+            # versions, so inspect first and apply only missing columns.
+            inspection_columns = {
+                row[1] for row in self._conn.execute("PRAGMA table_info(inspections)").fetchall()
+            }
+            if "authorized" not in inspection_columns:
+                self._conn.execute(
+                    "ALTER TABLE inspections ADD COLUMN authorized INTEGER NOT NULL DEFAULT 0"
+                )
+            if "allow_mutations" not in inspection_columns:
+                self._conn.execute(
+                    "ALTER TABLE inspections ADD COLUMN allow_mutations INTEGER NOT NULL DEFAULT 0"
+                )
             self._conn.commit()
 
     # -- low level --------------------------------------------------------
@@ -149,6 +165,8 @@ class Database:
         depth: str,
         focus: list[str],
         goals: list[str],
+        authorized: bool = False,
+        allow_mutations: bool = False,
     ) -> dict[str, Any]:
         record = {
             "id": new_id("insp"),
@@ -156,6 +174,8 @@ class Database:
             "depth": depth,
             "focus": focus,
             "goals": goals,
+            "authorized": bool(authorized),
+            "allow_mutations": bool(allow_mutations),
             "status": "queued",
             "error": None,
             "created_at": utcnow(),
@@ -166,9 +186,10 @@ class Database:
         }
         self._write(
             """
-            INSERT INTO inspections (id, url, depth, focus, goals, status, error,
-                                     created_at, started_at, finished_at, duration_s, report)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO inspections (id, url, depth, focus, goals, authorized, allow_mutations,
+                                     status, error, created_at, started_at, finished_at,
+                                     duration_s, report)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 record["id"],
@@ -176,6 +197,8 @@ class Database:
                 depth,
                 dumps(focus),
                 dumps(goals),
+                int(record["authorized"]),
+                int(record["allow_mutations"]),
                 record["status"],
                 None,
                 record["created_at"],
@@ -206,6 +229,8 @@ class Database:
             "depth": row["depth"],
             "focus": loads(row["focus"], []),
             "goals": loads(row["goals"], []),
+            "authorized": bool(row["authorized"]),
+            "allow_mutations": bool(row["allow_mutations"]),
             "status": row["status"],
             "error": row["error"],
             "created_at": row["created_at"],

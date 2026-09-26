@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -28,6 +29,17 @@ class _HarnessError(RuntimeError):
     """
 
 logger = logging.getLogger("probe.browser")
+WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+HIGH_IMPACT_CONTROL = re.compile(
+    r"\b(pay(?:\s+now)?|purchase|buy\s+now|place\s+order|delete|remove\s+account|cancel\s+subscription)\b",
+    re.IGNORECASE,
+)
+
+
+def should_block_request(method: str, *, allow_mutations: bool) -> bool:
+    """Return whether a request must be stopped by the browser's read-only guard."""
+    return not allow_mutations and method.upper() in WRITE_METHODS
+
 
 #: JS that tags every visible interactive element with a stable id and returns
 #: a compact descriptor for each one.
@@ -110,6 +122,7 @@ class PlaywrightController(BrowserController):
         record_video: bool = False,
         video_dir: Path | None = None,
         playwright: Playwright | None = None,
+        allow_mutations: bool = False,
     ) -> None:
         self.label = label
         self._headless = headless
@@ -118,6 +131,9 @@ class PlaywrightController(BrowserController):
         self._video_dir = video_dir
         self._pw = playwright
         self._owns_pw = playwright is None
+        self.allow_mutations = allow_mutations
+        self.simulated = False
+        self._blocked_request_keys: dict[tuple[str, str], int] = {}
 
         self._browser: Browser | None = None
         self._context: BrowserContext | None = None
@@ -150,7 +166,17 @@ class PlaywrightController(BrowserController):
         self._context = await self._browser.new_context(**context_kwargs)
         self._page = await self._context.new_page()
         self._page.set_default_timeout(15_000)
+        await self._page.route("**/*", self._guard_route)
         self._attach_listeners()
+
+    async def _guard_route(self, route: Any) -> None:
+        request = route.request
+        if should_block_request(request.method, allow_mutations=self.allow_mutations):
+            key = (request.method.upper(), request.url)
+            self._blocked_request_keys[key] = self._blocked_request_keys.get(key, 0) + 1
+            await route.abort("blockedbyclient")
+            return
+        await route.continue_()
 
     def _attach_listeners(self) -> None:
         page = self._page
@@ -190,14 +216,23 @@ class PlaywrightController(BrowserController):
             self._network.append(entry)
 
         def on_request_failed(request: Any) -> None:
-            self._request_starts.pop(id(request), None)
+            request_id = id(request)
+            self._request_starts.pop(request_id, None)
+            key = (request.method.upper(), request.url)
+            blocked_count = self._blocked_request_keys.get(key, 0)
+            blocked = blocked_count > 0
+            if blocked_count > 1:
+                self._blocked_request_keys[key] = blocked_count - 1
+            elif blocked_count:
+                self._blocked_request_keys.pop(key, None)
             self._network.append(
                 {
-                    "kind": "failed",
+                    "kind": "blocked" if blocked else "failed",
                     "method": request.method,
                     "url": request.url,
                     "status": None,
-                    "failure": (request.failure or "")[:200],
+                    "reason": "read-only protection" if blocked else None,
+                    "failure": "" if blocked else (request.failure or "")[:200],
                     "duration_ms": 0.0,
                     "ts": time.time(),
                 }
@@ -358,6 +393,20 @@ class PlaywrightController(BrowserController):
                 action="click",
                 target=target,
                 error=error,
+            )
+        element_label = element.text or element.aria_label or element.placeholder or element.name
+        sensitive_label = " ".join(
+            (element_label, element.href, element.name, element.type)
+        )
+        if not self.allow_mutations and HIGH_IMPACT_CONTROL.search(sensitive_label):
+            return ActionResult(
+                ok=False,
+                action="click",
+                target=target,
+                error="blocked by read-only safety mode",
+                error_kind="harness",
+                element_tag=element.tag,
+                element_label=element_label,
             )
 
         async def _click() -> None:

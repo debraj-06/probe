@@ -27,6 +27,8 @@ export interface Inspection {
   depth: Depth;
   focus: string[];
   goals: string[];
+  authorized: boolean;
+  allow_mutations: boolean;
   status: InspectionStatus;
   error: string | null;
   created_at: string;
@@ -132,6 +134,11 @@ export interface Report {
   top_findings: ReportFindingSummary[];
   correlated: number;
   browser: string;
+  decision_engine: { mode?: string; provider?: string; model?: string };
+  complete: boolean;
+  warnings: string[];
+  failed_agents: string[];
+  allow_mutations: boolean;
   generated_at?: string;
 }
 
@@ -151,6 +158,7 @@ export interface Health {
   app: string;
   llm_provider: string;
   llm_model: string;
+  allow_heuristic_mode: boolean;
   browser_mode: string;
   active_inspections: number;
 }
@@ -160,5 +168,7 @@ export interface InspectionCreate {
   depth: Depth;
   focus: FocusArea[];
   goals: string[];
+  authorized: boolean;
+  allow_mutations: boolean;
   autostart?: boolean;
 }

@@ -31,52 +31,59 @@ SEVERITY_LEVELS = ("critical", "high", "medium", "low", "info")
 class BrowserPool:
     """Creates one browser per agent and cleans everything up afterwards.
 
-    ``auto`` mode tries real Chromium first and transparently falls back to the
-    built-in simulator, so PROBE always runs even where no browser is installed.
+    A live website is never silently replaced by the DemoShop simulator. The
+    simulator is selected only with ``PROBE_BROWSER_MODE=mock``; otherwise a
+    missing Chromium installation fails the inspection visibly.
     """
 
-    def __init__(self, settings: Settings, inspection_id: str) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        inspection_id: str,
+        *,
+        allow_mutations: bool = False,
+    ) -> None:
         self.settings = settings
         self.inspection_id = inspection_id
-        self._playwright_ok = settings.browser_mode in {"auto", "playwright"}
+        self.allow_mutations = allow_mutations
         self._pw = None
         self._controllers: list[BrowserController] = []
         self._video_dir = Path(settings.data_dir) / "inspections" / inspection_id / "videos"
-        self.fell_back = False
+        self.fell_back = settings.browser_mode == "mock"
 
     async def create(self, label: str) -> BrowserController:
-        if self._playwright_ok:
-            try:
-                if self._pw is None:
-                    from playwright.async_api import async_playwright
+        if self.settings.browser_mode == "mock":
+            controller = MockBrowser(label=label, latency=self.settings.mock_latency)
+            self._controllers.append(controller)
+            return controller
 
-                    self._pw = await async_playwright().start()
-                controller = PlaywrightController(
-                    label=label,
-                    headless=self.settings.headless,
-                    viewport={
-                        "width": self.settings.viewport_width,
-                        "height": self.settings.viewport_height,
-                    },
-                    record_video=self.settings.record_video,
-                    video_dir=self._video_dir,
-                    playwright=self._pw,
-                )
-                await controller.start()
-                self._controllers.append(controller)
-                return controller
-            except Exception as exc:  # noqa: BLE001 - degrade to the simulator
-                logger.warning("Playwright unavailable (%s); using the simulator", exc)
-                self._playwright_ok = False
-                self.fell_back = True
-                self._pw = None
-        controller = MockBrowser(label=label, latency=self.settings.mock_latency)
-        self._controllers.append(controller)
-        # reached either because mock was requested outright or because
-        # Playwright degraded — in both cases the report must not claim a real
-        # browser was used
-        self.fell_back = True
-        return controller
+        try:
+            if self._pw is None:
+                from playwright.async_api import async_playwright
+
+                self._pw = await async_playwright().start()
+            controller = PlaywrightController(
+                label=label,
+                headless=self.settings.headless,
+                viewport={
+                    "width": self.settings.viewport_width,
+                    "height": self.settings.viewport_height,
+                },
+                record_video=self.settings.record_video,
+                video_dir=self._video_dir,
+                playwright=self._pw,
+                allow_mutations=self.allow_mutations,
+            )
+            await controller.start()
+            self._controllers.append(controller)
+            return controller
+        except Exception as exc:  # noqa: BLE001 - fail closed; never fabricate a result
+            logger.exception("Real Chromium could not be started for agent %s", label)
+            raise RuntimeError(
+                "Real Chromium could not start. Install it with "
+                "`uv run --project services/api playwright install chromium` and retry. "
+                "No simulator fallback was used."
+            ) from exc
 
     @property
     def controllers(self) -> list[BrowserController]:
@@ -172,7 +179,11 @@ class Orchestrator:
             },
         )
 
-        pool = BrowserPool(self.settings, inspection_id)
+        pool = BrowserPool(
+            self.settings,
+            inspection_id,
+            allow_mutations=bool(inspection.get("allow_mutations", False)),
+        )
         agents: list[Agent] = build_agents(
             focus=inspection["focus"],
             depth=inspection["depth"],
@@ -218,9 +229,13 @@ class Orchestrator:
             results = await asyncio.gather(
                 *(agent.run(context) for agent in agents), return_exceptions=True
             )
-            for result in results:
-                if isinstance(result, Exception):
-                    logger.exception("agent failed", exc_info=result)
+            failed_roles: list[str] = []
+            for agent, result in zip(agents, results, strict=True):
+                if isinstance(result, BaseException):
+                    logger.error("agent %s escaped with an error: %r", agent.spec.role, result)
+                    failed_roles.append(agent.spec.label)
+                elif result.get("status") == "failed":
+                    failed_roles.append(agent.spec.label)
 
             if cancel.is_set():
                 status = "stopped"
@@ -234,13 +249,27 @@ class Orchestrator:
                     agents=agents,
                     started=started,
                     fell_back=pool.fell_back,
+                    complete=not failed_roles,
+                    failed_roles=failed_roles,
+                    model_info=(
+                        {**self.llm.info(), "provider": self.settings.llm_provider}
+                        if self.llm is not None
+                        else None
+                    ),
+                    allow_mutations=bool(inspection.get("allow_mutations", False)),
                 )
                 await asyncio.to_thread(self.db.update_inspection, inspection_id, report=report)
+                if failed_roles:
+                    status = "failed"
+                    error = (
+                        "Some inspection agents could not complete, so this report is partial: "
+                        + ", ".join(failed_roles)
+                    )
         except asyncio.CancelledError:
             status = "stopped"
-        except Exception as exc:  # noqa: BLE001 - never leave the UI hanging
+        except Exception:  # noqa: BLE001 - never leave the UI hanging
             status = "failed"
-            error = f"{type(exc).__name__}: {exc}"
+            error = "The inspection could not be completed. Check the server logs and engine configuration."
             logger.exception("inspection %s failed", inspection_id)
         finally:
             await pool.close()
@@ -314,6 +343,10 @@ class Orchestrator:
         agents: list[Agent],
         started: float,
         fell_back: bool,
+        complete: bool = True,
+        failed_roles: list[str] | None = None,
+        model_info: dict[str, str] | None = None,
+        allow_mutations: bool = False,
     ) -> dict[str, Any]:
         duration = time.perf_counter() - started
         counts = {level: 0 for level in SEVERITY_LEVELS}
@@ -349,6 +382,23 @@ class Orchestrator:
 
         host = inspection["url"].split("//")[-1].split("/")[0]
         minutes, seconds = divmod(int(duration), 60)
+        warnings: list[str] = [
+            "Findings reflect only the pages and flows exercised; evidence and confidence do not guarantee accuracy or full site coverage. Verify important results independently."
+        ]
+        if fell_back:
+            warnings.append("Simulator mode was used; this run did not inspect the live website.")
+        if model_info is None:
+            warnings.append("No LLM is configured; deterministic policies drove the agents.")
+        if not allow_mutations:
+            warnings.append(
+                "Read-only protection was enabled: write requests and high-impact controls may be blocked."
+            )
+        else:
+            warnings.append(
+                "Mutation testing was enabled and may have changed or created data on the target site."
+            )
+        if failed_roles:
+            warnings.append("The report is partial because one or more agents did not finish.")
 
         return {
             "application": host or inspection["url"],
@@ -373,5 +423,14 @@ class Orchestrator:
             "top_findings": top_findings,
             "correlated": sum(1 for f in findings if f.get("correlated")),
             "browser": "simulator" if fell_back else "chromium",
+            "decision_engine": (
+                {"mode": "llm", **(model_info or {})}
+                if model_info
+                else {"mode": "heuristic", "provider": "none", "model": ""}
+            ),
+            "complete": complete,
+            "warnings": warnings,
+            "failed_agents": failed_roles or [],
+            "allow_mutations": allow_mutations,
             "generated_at": utcnow(),
         }

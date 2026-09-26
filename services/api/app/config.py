@@ -13,6 +13,8 @@ from typing import Any, Literal
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
 BrowserMode = Literal["auto", "playwright", "mock"]
 LLMProvider = Literal["none", "openai", "anthropic", "gemini", "openai-compatible"]
 
@@ -28,7 +30,7 @@ DEPTH_STEPS: dict[str, int] = {
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="PROBE_",
-        env_file=".env",
+        env_file=PROJECT_ROOT / ".env",
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False,
@@ -54,6 +56,8 @@ class Settings(BaseSettings):
 
     # -- LLM --------------------------------------------------------------
     llm_provider: LLMProvider = "none"
+    # Permit explicit offline policy runs only when an operator opts in.
+    allow_heuristic_mode: bool = False
     llm_model: str = ""
     llm_api_key: str = ""
     llm_base_url: str = ""
@@ -63,7 +67,9 @@ class Settings(BaseSettings):
     llm_retries: int = 2
 
     # -- browser ----------------------------------------------------------
-    browser_mode: BrowserMode = "auto"
+    # Real Chromium is the default. The simulator is available only when it is
+    # explicitly requested (e.g. for the DemoShop and CI tests).
+    browser_mode: BrowserMode = "playwright"
     headless: bool = True
     viewport_width: int = 1280
     viewport_height: int = 800

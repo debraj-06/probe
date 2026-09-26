@@ -61,8 +61,8 @@ export default function ActivityFeed({ events }: { events: ProbeEvent[] }) {
   return (
     <>
       <PanelHeader
-        title="Activity"
-        subtitle={`${events.length} event${events.length === 1 ? "" : "s"}`}
+        title="Progress"
+        subtitle={`user-visible work log · ${events.length} event${events.length === 1 ? "" : "s"}`}
         icon="⚡"
         right={
           <div className="flex rounded-lg border border-ink-700 bg-ink-950/60 p-0.5">

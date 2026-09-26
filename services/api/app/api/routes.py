@@ -49,7 +49,8 @@ def health(request: Request) -> HealthOut:
         status="ok",
         app=settings.app_name,
         llm_provider=settings.llm_provider,
-        llm_model=settings.llm_model or ("—" if not settings.llm_enabled else "default"),
+        llm_model=(svc.orchestrator.llm.model if svc.orchestrator.llm is not None else "—"),
+        allow_heuristic_mode=settings.allow_heuristic_mode,
         browser_mode=settings.browser_mode,
         active_inspections=len(svc.orchestrator.active()),
     )
@@ -61,12 +62,27 @@ def health(request: Request) -> HealthOut:
 @router.post("/inspections", response_model=InspectionOut, status_code=201)
 async def create_inspection(payload: InspectionCreate, request: Request) -> InspectionOut:
     svc = services(request)
+    if not payload.authorized:
+        raise HTTPException(
+            status_code=403,
+            detail="Confirm that you own this site or have permission to test it before starting.",
+        )
+    if not svc.settings.llm_enabled and not svc.settings.allow_heuristic_mode:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "No LLM is configured. Set PROBE_LLM_PROVIDER and the matching model settings; "
+                "heuristic runs require the explicit PROBE_ALLOW_HEURISTIC_MODE=true opt-in."
+            ),
+        )
     record = await asyncio.to_thread(
         svc.db.create_inspection,
         url=payload.url,
         depth=payload.depth,
         focus=list(payload.focus),
         goals=list(payload.goals),
+        authorized=payload.authorized,
+        allow_mutations=payload.allow_mutations,
     )
     await svc.bus.emit(
         record["id"],

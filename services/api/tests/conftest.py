@@ -19,6 +19,7 @@ def settings(tmp_path):
         browser_mode="mock",
         data_dir=tmp_path,
         llm_provider="none",
+        allow_heuristic_mode=True,
         agent_step_delay=0.0,
         max_steps_per_agent=6,
         slow_action_ms=4000,
